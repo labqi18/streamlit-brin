@@ -6,3 +6,4 @@ matplotlib
 seaborn
 folium
 streamlit-folium
+openpyxl
