@@ -14,7 +14,7 @@ from streamlit_folium import st_folium
 from folium.plugins import HeatMap
 import numpy as np
 
-data = pd.read_excel(r"C:\Users\Dell\Downloads\latihan python\brin malaria\Rekap Data BRIN_rev.xlsx",  sheet_name="Dashboard")
+data = pd.read_excel("Rekap Data BRIN_rev.xlsx",  sheet_name="Dashboard")
 # Pilih variabel independen (X) dan dependen (y)
 X = data[["Jumlah Penduduk", 
         "Luas hutan dan perairan (Ribu Hektar)", 
@@ -445,4 +445,5 @@ elif selected == "Prediction":
         """,
         unsafe_allow_html=True
     )
+
 
