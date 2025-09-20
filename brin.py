@@ -134,7 +134,7 @@ if selected == "Home":
     """, unsafe_allow_html=True)
 
     # Menambahkan gambar di bawah teks marquee tanpa efek
-    st.image("logo.jpg", use_column_width=True)  
+    st.image("logo.jpg", use_container_width=True) 
 # Kondisi jika pengguna memilih Visualisasi
 elif selected == "Visualization":
     graph_type = st.selectbox(
@@ -445,5 +445,6 @@ elif selected == "Prediction":
         """,
         unsafe_allow_html=True
     )
+
 
 
