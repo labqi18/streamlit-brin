@@ -187,22 +187,33 @@ elif selected == "Visualization":
 
 
     elif graph_type == "Line Chart":
-        # Filter berdasarkan Provinsi
+        # === Daftar provinsi + opsi "Indonesia (Total)" ===
         provinsi_list = sorted(data["Provinsi"].unique())
+        provinsi_list = ["Indonesia (Total)"] + provinsi_list
+
         provinsi_pilihan = st.multiselect(
             "Pilih Provinsi", 
             provinsi_list, 
             key="line_prov"
         )
 
-        # Jika ada provinsi dipilih → filter data
-        data_filtered = data[data["Provinsi"].isin(provinsi_pilihan)] if provinsi_pilihan else data
+        if not provinsi_pilihan:
+            data_filtered = data.copy()  # default semua provinsi
+        else:
+            # Jika ada Indonesia (Total) → ambil semua provinsi, lalu agregasi
+            if "Indonesia (Total)" in provinsi_pilihan:
+                data_filtered = data.copy()
+            else:
+                data_filtered = data[data["Provinsi"].isin(provinsi_pilihan)]
 
         if data_filtered.empty:
             st.warning("Data kosong untuk provinsi yang dipilih.")
         else:
             exclude_cols = ["Provinsi", "Tahun", "Latitude", "Longitude"]
-            numeric_cols = [col for col in data_filtered.select_dtypes(include=[np.number]).columns if col not in exclude_cols]
+            numeric_cols = [
+                col for col in data_filtered.select_dtypes(include=[np.number]).columns
+                if col not in exclude_cols
+            ]
 
             if len(numeric_cols) == 0:
                 st.error("Dataset tidak memiliki variabel numerik untuk Line Chart.")
@@ -210,11 +221,32 @@ elif selected == "Visualization":
                 var_line = st.selectbox("Pilih variabel untuk Line Chart", numeric_cols, key="line_var")
 
                 if st.button("Tampilkan Line Chart", key="show_line"):
-                    # === Buat Line Chart ===
                     fig, ax = plt.subplots(figsize=(10, 6))
 
-                    # Plot tren per provinsi
+                    # --- Jika Indonesia (Total) dipilih ---
+                    if "Indonesia (Total)" in provinsi_pilihan:
+                        indo_data = (
+                            data.groupby("Tahun")[var_line]
+                            .sum()
+                            .sort_index()
+                        )
+                        ax.plot(
+                            indo_data.index,
+                            indo_data.values,
+                            marker="o",
+                            linewidth=3,
+                            label="Indonesia (Total)",
+                            color="black"
+                        )
+
+                        # Tambahkan label angka
+                        for x, y in zip(indo_data.index, indo_data.values):
+                            ax.text(x, y, f"{int(y):,}", fontsize=9, ha="center", va="bottom")
+
+                    # --- Plot per provinsi yang dipilih (kecuali Indonesia) ---
                     for prov in data_filtered["Provinsi"].unique():
+                        if prov not in provinsi_pilihan or prov == "Indonesia (Total)":
+                            continue
                         line_data = (
                             data_filtered[data_filtered["Provinsi"] == prov]
                             .groupby("Tahun")[var_line]
@@ -223,76 +255,85 @@ elif selected == "Visualization":
                         )
                         ax.plot(line_data.index, line_data.values, marker="o", linewidth=2, label=prov)
 
-                        # Tambahkan label angka di dekat titik
+                        # Tambahkan label angka
                         for x, y in zip(line_data.index, line_data.values):
                             ax.text(x, y, f"{int(y):,}", fontsize=9, ha="center", va="bottom")
 
-                    ax.set_title(f"Tren {var_line} per Tahun berdasarkan Provinsi")
+                    ax.set_title(f"Tren {var_line} per Tahun")
                     ax.set_xlabel("Tahun")
                     ax.set_ylabel(var_line)
                     ax.legend(title="Provinsi", bbox_to_anchor=(1.05, 1), loc="upper left")
 
-                    # Pastikan x-label bulat integer (2019, 2020, dst.)
+                    # Pastikan x-label bulat integer
                     ax.xaxis.set_major_locator(MaxNLocator(integer=True))
 
-                    # Tampilkan grafik
+                    # ✅ Tampilkan grafik
                     st.pyplot(fig)
 
 
 
-# === Stacked Bar Chart (Top 7) ===
+    # === Stacked Bar Chart (Top 7) ===
     elif graph_type == "Stacked Bar Chart":
         exclude_cols = ["Provinsi", "Tahun"]
         numeric_cols = [col for col in data.select_dtypes(include=[np.number]).columns if col not in exclude_cols]
 
-        fitur_stacked = st.selectbox("Pilih Variabel untuk Stacked Bar Chart", numeric_cols, key="stacked_var")
+        if len(numeric_cols) == 0:
+            st.error("Tidak ada variabel numerik untuk Stacked Bar Chart!")
+        else:
+            fitur_stacked = st.selectbox("Pilih Variabel untuk Stacked Bar Chart", numeric_cols, key="stacked_var")
 
-        if st.button("Tampilkan Stacked Bar Chart"):
-            # Ambil Top 7 provinsi
-            top7_prov = (
-                data.groupby("Provinsi")[fitur_stacked]
-                .sum()
-                .nlargest(7)
-                .index
-            )
+            if st.button("Tampilkan Stacked Bar Chart"):
+                # Ambil Top 7 provinsi berdasarkan total fitur
+                top7_prov = (
+                    data.groupby("Provinsi")[fitur_stacked]
+                    .sum()
+                    .nlargest(7)
+                    .index
+                )
 
-            # Pivot tabel: Tahun x Provinsi
-            pivot_df = data[data["Provinsi"].isin(top7_prov)].pivot_table(
-                index="Tahun",
-                columns="Provinsi",
-                values=fitur_stacked,
-                aggfunc="sum",
-                fill_value=0
-            )
+                # Pivot tabel: Tahun x Provinsi
+                pivot_df = data[data["Provinsi"].isin(top7_prov)].pivot_table(
+                    index="Tahun",
+                    columns="Provinsi",
+                    values=fitur_stacked,
+                    aggfunc="sum",
+                    fill_value=0
+                )
 
-            # Buat stacked bar chart
-            fig, ax = plt.subplots(figsize=(10, 6))
-            colors = plt.cm.tab10.colors  # ambil palet tab10
-            pivot_df.plot(kind="bar", stacked=True, ax=ax, color=colors[:len(top7_prov)])
+                # Pastikan Tahun jadi integer (atau string biar aman)
+                pivot_df.index = pivot_df.index.astype(int)
 
-            plt.title(f"Top 7 Provinsi dengan {fitur_stacked} (Stacked per Tahun)")
-            plt.xlabel("Tahun")
-            plt.ylabel(fitur_stacked)
-            plt.xticks(rotation=0)
+                # Buat stacked bar chart
+                fig, ax = plt.subplots(figsize=(10, 6))
+                colors = plt.cm.tab10.colors
+                pivot_df.plot(
+                    kind="bar",
+                    stacked=True,
+                    ax=ax,
+                    color=colors[:len(top7_prov)]
+                )
 
-            # Buat legend manual + label jumlah total provinsi
-            prov_totals = pivot_df.sum(axis=0).sort_values(ascending=False)
-            handles, labels = ax.get_legend_handles_labels()
+                plt.title(f"Top 7 Provinsi dengan {fitur_stacked} (Stacked per Tahun)")
+                plt.xlabel("Tahun")
+                plt.ylabel(fitur_stacked)
+                plt.xticks(rotation=0)
 
-            new_labels = []
-            for prov, total in prov_totals.items():
-                new_labels.append(f"{prov} ({int(total):,})")
+                # ✅ taruh legend di luar (sebelah kanan)
+                ax.legend(
+                    title="Provinsi",
+                    bbox_to_anchor=(1.05, 1),
+                    loc="upper left",
+                    borderaxespad=0
+                )
 
-            ax.legend(
-                handles,
-                new_labels,
-                title="Provinsi (Total)",
-                bbox_to_anchor=(1.05, 1),
-                loc="upper left"
-            )
+                # ✅ tampilkan grafik
+                st.pyplot(fig)
 
-            st.pyplot(fig)
-
+                # ✅ tampilkan tabel angka dengan Tahun bulat tanpa koma
+                st.markdown("### 📊 Nilai per Tahun (Top 7 Provinsi)")
+                styled_df = pivot_df.copy()
+                styled_df.index = styled_df.index.astype(str)  # 👉 konversi jadi string, agar tidak diformat 2,019
+                st.dataframe(styled_df.style.format("{:,}", subset=styled_df.columns))
 
 
     # === HeatMap dengan Latitude & Longitude ===
@@ -445,6 +486,5 @@ elif selected == "Prediction":
         """,
         unsafe_allow_html=True
     )
-
 
 
