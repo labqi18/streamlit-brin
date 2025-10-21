@@ -7,6 +7,7 @@ from sklearn.model_selection import train_test_split
 from sklearn.metrics import mean_squared_error, r2_score
 import numpy as np
 import matplotlib.pyplot as plt
+import matplotlib.dates as mdates
 from matplotlib.ticker import MaxNLocator
 import seaborn as sns
 import folium
@@ -15,23 +16,25 @@ from folium.plugins import HeatMap
 import numpy as np
 
 
-data = pd.read_excel("Rekap Data BRIN_new.xlsx")
+data = pd.read_excel("Rekap Data BRIN NEW.xlsx")
 # Pilih variabel independen (X) dan dependen (y)
-X = data[["Jumlah Penduduk", 
-        "Luas hutan dan perairan (Ribu Hektar)", 
-        "Rata-rata Suhu", 
-        "Rata-rata curah hujan (mm)", 
-        "Jumlah hari hujan", 
-        "Rata-rata kelembapan", 
-        "Rata-rata radiasi solar", 
-        "Rata-rata Elevasi", 
-        "Jumlah Penduduk 0-4 Tahun"]]
+X = data[[
+    'Total Population',
+    'Total Population Aged 0-4 Years',
+    'Forest and Water Areas (1000 Hectare)',
+    'Average Temperature',
+    'Average Rainfall (mm)',
+    'Total Days of Rain',
+    'Average Humidity',
+    'Average Solar Radiation',
+    'Average Elevation'
+]]
 
-y = data["Jumlah penderita Malaria"]
+y = data['Total Malaria Cases']
 
-# === 3. Split data 90:10 ===
+# === 3. Split data 70:30 ===
 X_train, X_test, y_train, y_test = train_test_split(
-    X, y, test_size=0.1, random_state=42
+    X, y, test_size=0.3, random_state=42
 )
 
 # === 4. Standardisasi fitur ===
@@ -46,9 +49,9 @@ y_train_s = scaler_y.fit_transform(y_train.values.reshape(-1,1)).ravel()
 # === 5. Model SVR dengan parameter hasil PSO ===
 svr_model = SVR(
     kernel="rbf",
-    C=45.2156355,
-    epsilon=0.0018438168,
-    gamma=0.130472228
+    C=80,
+    epsilon=0.01,
+    gamma=0.1
 )
 
 svr_model.fit(X_train_s, y_train_s)
@@ -140,55 +143,143 @@ if selected == "Home":
 elif selected == "Visualization":
     graph_type = st.selectbox(
         "Pilih Jenis Grafik", 
-        ["Box Plot", "Heatmap Korelasi", "Line Chart", "Stacked Bar Chart", "HeatMap"],
+        ["Box Plot", "Heatmap of Corellation", "Line Chart", "Stacked Bar Chart", "HeatMap"],
         key="graph_type"
     )
         # Applying the custom class to the title
     st.markdown('<h1 class="centered-title">Data Visualization</h1>', unsafe_allow_html=True)
+    
+ 
     if graph_type == "Box Plot":
-        # Buat daftar kolom yang tidak boleh dipakai sebagai fitur
-        exclude_cols = ["Provinsi", "Tahun"]
+        # === 1️⃣ Konversi tanggal dan ambil tahun & bulan ===
+        data["Year-Month"] = pd.to_datetime(data["Year-Month"], format="%d/%m/%Y", errors="coerce")
+        data["Year"] = data["Year-Month"].dt.year
+        data["Month"] = data["Year-Month"].dt.month
 
-        # Ambil hanya kolom numerik, lalu buang yang ada di exclude list
+        # === 2️⃣ Tentukan kolom numerik ===
+        exclude_cols = ["Province", "Year-Month", "Year", "Month", "Longitude", "Latitude"]
         numeric_cols = [col for col in data.select_dtypes(include=[np.number]).columns if col not in exclude_cols]
 
         fitur_boxplot = st.selectbox(
-            'Pilih Fitur untuk Box Plot', 
-            numeric_cols, 
-            key='boxplot_fitur'
+            "Select Feature for Box Plot",
+            numeric_cols,
+            key="boxplot_feature"
         )
 
-        tahun_list = sorted(data["Tahun"].unique())
-        tahun_pilihan = st.multiselect(
-            "Pilih Tahun (kosongkan untuk semua tahun)", 
-            tahun_list, 
-            key='boxplot_tahun'
+        # === 3️⃣ Tambahkan opsi 'Indonesia' ===
+        provinsi_list = ["Indonesia"] + sorted(data["Province"].dropna().unique().tolist())
+        provinsi_pilihan = st.selectbox("Select Province", provinsi_list, key="boxplot_province")
+
+        # === 4️⃣ Pilih Tahun ===
+        tahun_list = sorted(data["Year"].dropna().unique())
+        tahun_pilihan = st.selectbox("Select Year", tahun_list, key="boxplot_year")
+
+        # === 5️⃣ Pilih Bulan (opsional, boleh kosong) ===
+        bulan_dict = {
+            1: "January", 2: "February", 3: "March", 4: "April",
+            5: "May", 6: "June", 7: "July", 8: "August",
+            9: "September", 10: "October", 11: "November", 12: "December"
+        }
+
+        bulan_list = sorted(data["Month"].dropna().unique())
+        bulan_pilihan = st.multiselect(
+            "Select Month (leave empty to show all months)",
+            bulan_list,
+            format_func=lambda x: bulan_dict.get(x, str(x)),
+            key="boxplot_month"
         )
 
-        if st.button('Tampilkan Box Plot', key='show_boxplot'):
-            data_filtered = data[data["Tahun"].isin(tahun_pilihan)] if tahun_pilihan else data
-            fig, ax = plt.subplots(figsize=(10,6))
-            sns.boxplot(x="Tahun", y=fitur_boxplot, data=data_filtered)
-            plt.title(f'Box Plot {fitur_boxplot} berdasarkan Tahun')
-            st.pyplot(fig)
+        # === 6️⃣ Filter data ===
+        if provinsi_pilihan == "Indonesia":
+            # Semua provinsi dalam tahun (dan bulan jika dipilih)
+            data_filtered = data[data["Year"] == tahun_pilihan]
+            if bulan_pilihan:
+                data_filtered = data_filtered[data_filtered["Month"].isin(bulan_pilihan)]
+        else:
+            # Provinsi spesifik
+            data_filtered = data[data["Province"] == provinsi_pilihan]
+            data_filtered = data_filtered[data_filtered["Year"] == tahun_pilihan]
+            if bulan_pilihan:
+                data_filtered = data_filtered[data_filtered["Month"].isin(bulan_pilihan)]
 
-    elif graph_type == "Heatmap Korelasi":
+        # === 7️⃣ Tampilkan Box Plot ===
+        if st.button("Show Box Plot", key="show_boxplot"):
+            import matplotlib.pyplot as plt
+            import seaborn as sns
+
+            if data_filtered.empty:
+                st.warning("No data available for the selected filters.")
+            else:
+                fig, ax = plt.subplots(figsize=(10, 6))
+
+                if provinsi_pilihan == "Indonesia":
+                    if bulan_pilihan:
+                        # Distribusi antar provinsi untuk bulan tertentu
+                        sns.boxplot(
+                            x="Month",
+                            y=fitur_boxplot,
+                            data=data_filtered,
+                            palette="coolwarm",
+                            ax=ax
+                        )
+                        ax.set_xticklabels([bulan_dict[m] for m in sorted(data_filtered["Month"].unique())])
+                        plt.title(
+                            f"Distribution of {fitur_boxplot} Across Provinces — Selected Months {tahun_pilihan}",
+                            fontsize=14
+                        )
+                    else:
+                        # Distribusi antar provinsi sepanjang 12 bulan
+                        sns.boxplot(
+                            x="Month",
+                            y=fitur_boxplot,
+                            data=data_filtered,
+                            palette="coolwarm",
+                            ax=ax
+                        )
+                        ax.set_xticklabels([bulan_dict[m] for m in sorted(data_filtered["Month"].unique())])
+                        plt.title(
+                            f"Distribution of {fitur_boxplot} Across Provinces — All Months {tahun_pilihan}",
+                            fontsize=14
+                        )
+
+                    plt.xlabel("Month", fontsize=12)
+                    plt.ylabel(fitur_boxplot, fontsize=12)
+
+                else:
+                    # Distribusi antar bulan untuk provinsi tertentu
+                    sns.boxplot(
+                        x="Month",
+                        y=fitur_boxplot,
+                        data=data_filtered,
+                        palette="Set2",
+                        ax=ax
+                    )
+                    ax.set_xticklabels([bulan_dict[m] for m in sorted(data_filtered["Month"].unique())])
+                    plt.title(f"Monthly Box Plot of {fitur_boxplot} — {provinsi_pilihan} ({tahun_pilihan})", fontsize=14)
+                    plt.xlabel("Month", fontsize=12)
+                    plt.ylabel(fitur_boxplot, fontsize=12)
+
+                plt.grid(True, axis="y", linestyle="--", alpha=0.5)
+                plt.tight_layout()
+                st.pyplot(fig)
+
+
+    elif graph_type == "Heatmap of Corellation":
         if st.button("Tampilkan Heatmap Korelasi"):
             # === Kolom yang tidak dipakai ===
             exclude_cols = ["Provinsi", "Tahun", "Latitude", "Longitude"]
 
             # === Variabel yang digunakan di model SVR ===
             svr_vars = [
-                "Jumlah Penduduk",
-                "Luas hutan dan perairan (Ribu Hektar)",
-                "Rata-rata Suhu",
-                "Rata-rata curah hujan (mm)",
-                "Jumlah hari hujan",
-                "Rata-rata kelembapan",
-                "Rata-rata radiasi solar",
-                "Rata-rata Elevasi",
-                "Jumlah Penduduk 0-4 Tahun",
-                "Jumlah penderita Malaria"
+                "Total  Population", 
+                "Forest and Water Areas (1000 Hectare)", 
+                "Average Temperature", 
+                "Average Rainfall (mm)", 
+                "Total Days of Rain", 
+                "Average Humidity", 
+                "Average Solar Radiation", 
+                "Average Elevation", 
+                "Total Population Aged 0-4 Years"
             ]
 
             # === Filter data ===
@@ -205,33 +296,35 @@ elif selected == "Visualization":
                 corr, annot=True, fmt=".2f", cmap="coolwarm",
                 cbar=True, square=True, ax=ax
             )
-            plt.title("Heatmap Korelasi Variabel SVR (Model Malaria)")
+            plt.title("Heatmap of Correlation Variabel SVR")
             st.pyplot(fig)
 
     elif graph_type == "Line Chart":
         # === Daftar provinsi + opsi "Indonesia (Total)" ===
-        provinsi_list = sorted(data["Provinsi"].unique())
+        provinsi_list = sorted(data["Province"].unique())
         provinsi_list = ["Indonesia (Total)"] + provinsi_list
-
         provinsi_pilihan = st.multiselect(
             "Pilih Provinsi", 
             provinsi_list, 
             key="line_prov"
         )
 
+        # === Konversi kolom Year-Month ke datetime ===
+        data["Year-Month"] = pd.to_datetime(data["Year-Month"], format="%d/%m/%Y", errors="coerce")
+
+        # === Filter data sesuai pilihan provinsi ===
         if not provinsi_pilihan:
             data_filtered = data.copy()  # default semua provinsi
         else:
-            # Jika ada Indonesia (Total) → ambil semua provinsi, lalu agregasi
             if "Indonesia (Total)" in provinsi_pilihan:
                 data_filtered = data.copy()
             else:
-                data_filtered = data[data["Provinsi"].isin(provinsi_pilihan)]
+                data_filtered = data[data["Province"].isin(provinsi_pilihan)]
 
         if data_filtered.empty:
             st.warning("Data kosong untuk provinsi yang dipilih.")
         else:
-            exclude_cols = ["Provinsi", "Tahun", "Latitude", "Longitude"]
+            exclude_cols = ["Province", "Year-Month", "Latitude", "Longitude"]
             numeric_cols = [
                 col for col in data_filtered.select_dtypes(include=[np.number]).columns
                 if col not in exclude_cols
@@ -240,15 +333,19 @@ elif selected == "Visualization":
             if len(numeric_cols) == 0:
                 st.error("Dataset tidak memiliki variabel numerik untuk Line Chart.")
             else:
-                var_line = st.selectbox("Pilih variabel untuk Line Chart", numeric_cols, key="line_var")
+                var_line = st.selectbox("Pilih Variabel untuk Line Chart", numeric_cols, key="line_var")
 
                 if st.button("Tampilkan Line Chart", key="show_line"):
+                    import matplotlib.dates as mdates
+                    import matplotlib.pyplot as plt
+                    from functools import reduce
+
                     fig, ax = plt.subplots(figsize=(10, 6))
 
                     # --- Jika Indonesia (Total) dipilih ---
                     if "Indonesia (Total)" in provinsi_pilihan:
                         indo_data = (
-                            data.groupby("Tahun")[var_line]
+                            data.groupby("Year-Month")[var_line]
                             .sum()
                             .sort_index()
                         )
@@ -261,71 +358,126 @@ elif selected == "Visualization":
                             color="black"
                         )
 
-                        # Tambahkan label angka
-                        for x, y in zip(indo_data.index, indo_data.values):
-                            ax.text(x, y, f"{int(y):,}", fontsize=9, ha="center", va="bottom")
-
-                    # --- Plot per provinsi yang dipilih (kecuali Indonesia) ---
-                    for prov in data_filtered["Provinsi"].unique():
+                    # --- Plot per provinsi yang dipilih ---
+                    for prov in data_filtered["Province"].unique():
                         if prov not in provinsi_pilihan or prov == "Indonesia (Total)":
                             continue
                         line_data = (
-                            data_filtered[data_filtered["Provinsi"] == prov]
-                            .groupby("Tahun")[var_line]
+                            data_filtered[data_filtered["Province"] == prov]
+                            .groupby("Year-Month")[var_line]
                             .sum()
                             .sort_index()
                         )
                         ax.plot(line_data.index, line_data.values, marker="o", linewidth=2, label=prov)
 
-                        # Tambahkan label angka
-                        for x, y in zip(line_data.index, line_data.values):
-                            ax.text(x, y, f"{int(y):,}", fontsize=9, ha="center", va="bottom")
-
-                    ax.set_title(f"Tren {var_line} per Tahun")
-                    ax.set_xlabel("Tahun")
+                    # === Format tanggal dan tampilan ===
+                    ax.xaxis.set_major_formatter(mdates.DateFormatter('%b %Y'))
+                    plt.xticks(rotation=45)
+                    ax.set_title(f"Monthly Trend of {var_line}")
+                    ax.set_xlabel("Month-Year")
                     ax.set_ylabel(var_line)
-                    ax.legend(title="Provinsi", bbox_to_anchor=(1.05, 1), loc="upper left")
-
-                    # Pastikan x-label bulat integer
-                    ax.xaxis.set_major_locator(MaxNLocator(integer=True))
+                    ax.legend(title="Province", bbox_to_anchor=(1.05, 1), loc="upper left")
+                    ax.grid(True, linestyle='--', alpha=0.6)
 
                     # ✅ Tampilkan grafik
                     st.pyplot(fig)
 
+                    # === 🔽 Tampilkan tabel nilai di bawah grafik ===
+                    st.markdown("### 📊 Monthly Values Table")
+
+                    if "Indonesia (Total)" in provinsi_pilihan:
+                        # Gabungkan Indonesia (Total)
+                        indo_table = (
+                            data.groupby("Year-Month")[var_line]
+                            .sum()
+                            .reset_index()
+                            .rename(columns={var_line: "Indonesia (Total)"})
+                        )
+                        # Gabungkan dengan provinsi lain yang dipilih
+                        prov_tables = []
+                        for prov in data_filtered["Province"].unique():
+                            if prov not in provinsi_pilihan or prov == "Indonesia (Total)":
+                                continue
+                            tmp = (
+                                data_filtered[data_filtered["Province"] == prov]
+                                .groupby("Year-Month")[var_line]
+                                .sum()
+                                .reset_index()
+                                .rename(columns={var_line: prov})
+                            )
+                            prov_tables.append(tmp)
+                        # Gabungkan semua ke satu tabel
+                        df_merge = reduce(lambda left, right: pd.merge(left, right, on="Year-Month", how="outer"), [indo_table] + prov_tables)
+                    else:
+                        # Hanya provinsi-provinsi terpilih
+                        df_merge = (
+                            data_filtered[data_filtered["Province"].isin(provinsi_pilihan)]
+                            .pivot_table(
+                                index="Year-Month",
+                                columns="Province",
+                                values=var_line,
+                                aggfunc="sum"
+                            )
+                            .reset_index()
+                        )
+
+                    # Format tanggal jadi bulan-tahun
+                    df_merge["Year-Month"] = df_merge["Year-Month"].dt.strftime("%b %Y")
+
+                    # Format angka 2 desimal
+                    st.dataframe(df_merge.style.format("{:,.2f}", subset=df_merge.columns[1:]))
 
 
     # === Stacked Bar Chart (Top 7) ===
     elif graph_type == "Stacked Bar Chart":
-        exclude_cols = ["Provinsi", "Tahun"]
-        numeric_cols = [col for col in data.select_dtypes(include=[np.number]).columns if col not in exclude_cols]
+        exclude_cols = ["Province", "Year-Month", "Longitude", "Latitude"]
+        numeric_cols = [
+            col for col in data.select_dtypes(include=[np.number]).columns
+            if col not in exclude_cols
+        ]
 
         if len(numeric_cols) == 0:
-            st.error("Tidak ada variabel numerik untuk Stacked Bar Chart!")
+            st.error("No numeric variables available for Stacked Bar Chart!")
         else:
-            fitur_stacked = st.selectbox("Pilih Variabel untuk Stacked Bar Chart", numeric_cols, key="stacked_var")
+            fitur_stacked = st.selectbox(
+                "Select Variable for Stacked Bar Chart",
+                numeric_cols,
+                key="stacked_var"
+            )
 
-            if st.button("Tampilkan Stacked Bar Chart"):
-                # Ambil Top 7 provinsi berdasarkan total fitur
+            if st.button("Show Stacked Bar Chart", key="show_stacked"):
+                # --- Pastikan kolom waktu dalam format datetime ---
+                data["Year-Month"] = pd.to_datetime(data["Year-Month"], format="%d/%m/%Y", errors="coerce")
+                data["Year"] = data["Year-Month"].dt.year  # ambil tahun
+
+                # --- Ambil Top 7 Provinsi berdasarkan total fitur ---
                 top7_prov = (
-                    data.groupby("Provinsi")[fitur_stacked]
+                    data.groupby("Province")[fitur_stacked]
                     .sum()
                     .nlargest(7)
                     .index
                 )
 
-                # Pivot tabel: Tahun x Provinsi
-                pivot_df = data[data["Provinsi"].isin(top7_prov)].pivot_table(
-                    index="Tahun",
-                    columns="Provinsi",
-                    values=fitur_stacked,
-                    aggfunc="sum",
-                    fill_value=0
+                # --- Pivot tabel: Tahun x Provinsi ---
+                pivot_df = (
+                    data[data["Province"].isin(top7_prov)]
+                    .pivot_table(
+                        index="Year",
+                        columns="Province",
+                        values=fitur_stacked,
+                        aggfunc="sum",
+                        fill_value=0
+                    )
                 )
 
-                # Pastikan Tahun jadi integer (atau string biar aman)
-                pivot_df.index = pivot_df.index.astype(int)
+                # --- Urutkan kolom setiap tahun berdasarkan nilai dari kecil ke besar ---
+                sorted_cols = (
+                    pivot_df.apply(lambda x: x.sort_values(ascending=True).index, axis=1)
+                    .iloc[-1]  # pakai urutan tahun terakhir sebagai acuan global
+                )
+                pivot_df = pivot_df[sorted_cols]
 
-                # Buat stacked bar chart
+                # --- Buat Stacked Bar Chart ---
                 fig, ax = plt.subplots(figsize=(10, 6))
                 colors = plt.cm.tab10.colors
                 pivot_df.plot(
@@ -335,61 +487,74 @@ elif selected == "Visualization":
                     color=colors[:len(top7_prov)]
                 )
 
-                plt.title(f"Top 7 Provinsi dengan {fitur_stacked} (Stacked per Tahun)")
-                plt.xlabel("Tahun")
+                plt.title(f"Top 7 Provinces by {fitur_stacked} (Stacked from Smallest to Largest per Year)")
+                plt.xlabel("Year")
                 plt.ylabel(fitur_stacked)
                 plt.xticks(rotation=0)
 
-                # ✅ taruh legend di luar (sebelah kanan)
+                # --- Legend di luar ---
                 ax.legend(
-                    title="Provinsi",
+                    title="Province",
                     bbox_to_anchor=(1.05, 1),
                     loc="upper left",
                     borderaxespad=0
                 )
 
-                # ✅ tampilkan grafik
+                # --- Tampilkan grafik ---
                 st.pyplot(fig)
 
-                # ✅ tampilkan tabel angka dengan Tahun bulat tanpa koma
-                st.markdown("### 📊 Nilai per Tahun (Top 7 Provinsi)")
+                # --- Tampilkan tabel angka ---
+                st.markdown("### 📊 Yearly Values (Top 7 Provinces, Sorted from Smallest to Largest)")
                 styled_df = pivot_df.copy()
-                styled_df.index = styled_df.index.astype(str)  # 👉 konversi jadi string, agar tidak diformat 2,019
-                st.dataframe(styled_df.style.format("{:,}", subset=styled_df.columns))
+                styled_df.index = styled_df.index.astype(str)
+                st.dataframe(styled_df.style.format("{:,.2f}", subset=styled_df.columns))
+
+
 
 
     # === HeatMap dengan Latitude & Longitude ===
     elif graph_type == "HeatMap":
+        # ✅ Pastikan kolom koordinat ada
         if "Latitude" not in data.columns or "Longitude" not in data.columns:
             st.error("Kolom Latitude dan Longitude tidak ditemukan di dataset!")
         else:
+            # Konversi tipe data koordinat ke numerik
             data["Latitude"] = pd.to_numeric(data["Latitude"], errors="coerce")
             data["Longitude"] = pd.to_numeric(data["Longitude"], errors="coerce")
 
-            exclude_cols = ["Latitude", "Longitude", "Provinsi", "Tahun"]
-            numeric_cols = [col for col in data.select_dtypes(include=[np.number]).columns if col not in exclude_cols]
+            # --- Pastikan kolom waktu dalam format datetime & ambil tahun ---
+            data["Year-Month"] = pd.to_datetime(data["Year-Month"], format="%d/%m/%Y", errors="coerce")
+            data["Year"] = data["Year-Month"].dt.year
+
+            # --- Tentukan kolom numerik selain lat/lon dan identitas ---
+            exclude_cols = ["Latitude", "Longitude", "Province", "Year-Month"]
+            numeric_cols = [
+                col for col in data.select_dtypes(include=[np.number]).columns
+                if col not in exclude_cols
+            ]
 
             if len(numeric_cols) == 0:
-                st.error("Tidak ada variabel numerik untuk heatmap selain Latitude/Longitude!")
+                st.error("No numeric variables available for HeatMap visualization!")
             else:
-                var_heatmap = st.selectbox("Pilih variabel untuk HeatMap", numeric_cols, key="heatmap_var")
+                var_heatmap = st.selectbox("Select Variable for HeatMap", numeric_cols, key="heatmap_var")
 
-                # Tambahkan opsi filter tahun
-                tahun_list = sorted(data["Tahun"].dropna().unique())
-                tahun_pilihan = st.selectbox("Pilih Tahun untuk HeatMap", tahun_list, key="heatmap_tahun")
+                # === Filter Tahun ===
+                tahun_list = sorted(data["Year"].dropna().unique())
+                tahun_pilihan = st.selectbox("Select Year for HeatMap", tahun_list, key="heatmap_tahun")
 
-                if st.button("Tampilkan HeatMap", key="show_heatmap"):
-                    # Filter data berdasarkan tahun terpilih
-                    heat_data = data[data["Tahun"] == tahun_pilihan][
-                        ["Latitude", "Longitude", "Provinsi", var_heatmap]
+                if st.button("Show HeatMap", key="show_heatmap"):
+                    # --- Filter berdasarkan tahun ---
+                    heat_data = data[data["Year"] == tahun_pilihan][
+                        ["Latitude", "Longitude", "Province", var_heatmap]
                     ].dropna()
 
-                    if len(heat_data) == 0:
-                        st.error(f"Tidak ada data untuk tahun {tahun_pilihan}!")
+                    if heat_data.empty:
+                        st.error(f"No data available for the year {tahun_pilihan}!")
                     else:
+                        # --- Buat peta dasar ---
                         m = folium.Map(location=[-2.5, 118], zoom_start=5)
 
-                        # Tambahkan HeatMap
+                        # --- Tambahkan HeatMap layer ---
                         HeatMap(
                             heat_data[["Latitude", "Longitude", var_heatmap]].values.tolist(),
                             radius=20,
@@ -397,24 +562,36 @@ elif selected == "Visualization":
                             max_zoom=6
                         ).add_to(m)
 
-                        # Tambahkan marker angka lebih estetik
+                        # --- Tambahkan label teks tanpa background tapi dengan efek shadow ---
                         for _, row in heat_data.iterrows():
                             folium.Marker(
                                 location=[row["Latitude"], row["Longitude"]],
                                 icon=folium.DivIcon(
                                     html=f"""
                                         <div style="
-                                            font-size:9pt;
-                                            color:#003366;
-                                            text-shadow: 1px 1px 2px #ffffff;
+                                            font-size:10pt;
+                                            font-weight:bold;
+                                            color:#ffffff;
+                                            text-shadow:
+                                                -1px -1px 2px #000000,
+                                                1px -1px 2px #000000,
+                                                -1px 1px 2px #000000,
+                                                1px 1px 2px #000000;
                                             text-align:center;
-                                        ">{int(row[var_heatmap])}</div>
+                                        ">
+                                            {row["Province"]}<br>
+                                            {row[var_heatmap]:,.0f}
+                                        </div>
                                     """
                                 )
                             ).add_to(m)
 
-                        st.markdown(f"### 🌍 HeatMap Indonesia berdasarkan variabel: **{var_heatmap}** ({tahun_pilihan})")
+                        st.markdown(
+                            f"### 🌍 HeatMap of Indonesia showing **{var_heatmap}** values by Province in **{tahun_pilihan}**"
+                        )
                         st_folium(m, width=800, height=600, returned_objects=[])
+
+
 
 # Kondisi jika pengguna memilih Prediksi
 elif selected == "Prediction":
@@ -456,56 +633,58 @@ elif selected == "Prediction":
     st.markdown('<h1 class="title-style">Prediction Section</h1>', unsafe_allow_html=True)
 
 
-        # === Input untuk prediksi ===
-    jumlah_penduduk = st.number_input('Jumlah Penduduk', min_value=0, value=0, key='jumlah_penduduk')
-    luas_hutan_air = st.number_input('Luas hutan & perairan (Ribu Hektar)', min_value=0.0, value=0.0, key='luas_hutan_air')
-    rata_suhu = st.number_input('Rata-rata Suhu', min_value=0.0, value=0.0, key='rata_suhu')
-    curah_hujan = st.number_input('Rata-rata Curah Hujan (mm)', min_value=0.0, value=0.0, key='curah_hujan')
-    hari_hujan = st.number_input('Jumlah Hari Hujan', min_value=0, value=0, key='hari_hujan')
-    kelembapan = st.number_input('Rata-rata Kelembapan', min_value=0.0, value=0.0, key='kelembapan')
-    radiasi_solar = st.number_input('Rata-rata Radiasi Solar', min_value=0.0, value=0.0, key='radiasi_solar')
-    elevasi = st.number_input('Rata-rata Elevasi', min_value=0.0, value=0.0, key='elevasi')
-    penduduk_0_4 = st.number_input('Jumlah Penduduk 0-4 Tahun', min_value=0, value=0, key='penduduk_0_4')
+    # === Input Variables for SVR Prediction ===
+    st.subheader("Input Variables for SVR Prediction")
 
-    # === Data baru dalam DataFrame ===
+    total_population = st.number_input('Total Population', min_value=0, value=0, key='total_population')
+    population_0_4 = st.number_input('Total Population Aged 0-4 Years', min_value=0, value=0, key='population_0_4')
+    forest_water_area = st.number_input('Forest and Water Areas (1000 Hectare)', min_value=0.0, value=0.0, key='forest_water_area')
+    avg_temperature = st.number_input('Average Temperature', min_value=0.0, value=0.0, key='avg_temperature')
+    avg_rainfall = st.number_input('Average Rainfall (mm)', min_value=0.0, value=0.0, key='avg_rainfall')
+    rainy_days = st.number_input('Total Days of Rain', min_value=0, value=0, key='rainy_days')
+    avg_humidity = st.number_input('Average Humidity', min_value=0.0, value=0.0, key='avg_humidity')
+    avg_solar_radiation = st.number_input('Average Solar Radiation', min_value=0.0, value=0.0, key='avg_solar_radiation')
+    avg_elevation = st.number_input('Average Elevation', min_value=0.0, value=0.0, key='avg_elevation')
+
+    # === Create New DataFrame for Prediction ===
     new_data = pd.DataFrame({
-        "Jumlah Penduduk": [jumlah_penduduk],
-        "Luas hutan dan perairan (Ribu Hektar)": [luas_hutan_air],
-        "Rata-rata Suhu": [rata_suhu],
-        "Rata-rata curah hujan (mm)": [curah_hujan],
-        "Jumlah hari hujan": [hari_hujan],
-        "Rata-rata kelembapan": [kelembapan],
-        "Rata-rata radiasi solar": [radiasi_solar],
-        "Rata-rata Elevasi": [elevasi],
-        "Jumlah Penduduk 0-4 Tahun": [penduduk_0_4]
+        "Total Population": [total_population],
+        "Total Population Aged 0-4 Years": [population_0_4],
+        "Forest and Water Areas (1000 Hectare)": [forest_water_area],
+        "Average Temperature": [avg_temperature],
+        "Average Rainfall (mm)": [avg_rainfall],
+        "Total Days of Rain": [rainy_days],
+        "Average Humidity": [avg_humidity],
+        "Average Solar Radiation": [avg_solar_radiation],
+        "Average Elevation": [avg_elevation]
     })
 
-    # === Preprocessing (pakai scaler dari training) ===
+    # === Preprocessing Using the Trained Scaler ===
     new_data_scaled = scaler_X.transform(new_data)
 
-    # === Prediksi dengan model SVR yang sudah dilatih ===
-    if st.button('Prediksi', key='prediction_button'):
-        pred_scaled = svr_model.predict(new_data_scaled)   # hasil masih skala standar
-        pred = scaler_y.inverse_transform(pred_scaled.reshape(-1,1)).ravel()[0]  # balik ke skala asli
+    # === SVR Prediction ===
+    if st.button('Predict', key='prediction_button'):
+        pred_scaled = svr_model.predict(new_data_scaled)
+        pred = scaler_y.inverse_transform(pred_scaled.reshape(-1, 1)).ravel()[0]
 
         st.markdown(
-        f"""
-        <div style="
-            background-color:#f9f9f9;
-            border-radius:12px;
-            padding:20px;
-            box-shadow:0px 4px 10px rgba(0,0,0,0.15);
-            text-align:center;
-            font-family:Segoe UI, sans-serif;
-        ">
-            <h2 style="color:#2c3e50; margin-bottom:10px;">
-                🔮 Prediksi Jumlah Penderita Malaria
-            </h2>
-            <p style="font-size:42px; font-weight:bold; color:#e74c3c; margin:0;">
-                {pred:,.0f}
-            </p>
-        </div>
-        """,
-        unsafe_allow_html=True
-    )
+            f"""
+            <div style="
+                background-color:#f9f9f9;
+                border-radius:12px;
+                padding:20px;
+                box-shadow:0px 4px 10px rgba(0,0,0,0.15);
+                text-align:center;
+                font-family:Segoe UI, sans-serif;
+            ">
+                <h2 style="color:#2c3e50; margin-bottom:10px;">
+                    🔮 Predicted Number of Malaria Cases
+                </h2>
+                <p style="font-size:42px; font-weight:bold; color:#e74c3c; margin:0;">
+                    {pred:,.0f}
+                </p>
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
 
