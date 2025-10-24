@@ -272,7 +272,7 @@ elif selected == "Visualization":
             # === Variabel yang digunakan di model SVR ===
             svr_vars = [
                 "Total Malaria Cases",
-                "Total  Population", 
+                "Total Population", 
                 "Forest and Water Areas (1000 Hectare)", 
                 "Average Temperature", 
                 "Average Rainfall (mm)", 
