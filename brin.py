@@ -596,7 +596,28 @@ elif selected == "Visualization":
 
 # Kondisi jika pengguna memilih Prediksi
 elif selected == "Prediction":
-        
+
+    import numpy as np
+    from sklearn.metrics import mean_squared_error
+
+    # ==========================
+    # Precompute residual-based CI
+    # ==========================
+    # Prediksi training
+    y_train_pred = svr_model.predict(X_train_s)
+    y_train_pred_inv = scaler_y.inverse_transform(y_train_pred.reshape(-1,1)).ravel()
+    y_train_true_inv = scaler_y.inverse_transform(y_train_s.reshape(-1,1)).ravel()
+
+    # Residual training (error asli)
+    residuals = y_train_true_inv - y_train_pred_inv
+
+    # Standar deviasi residual (dipakai untuk CI)
+    error_std = np.std(residuals)
+
+
+    # ==========================
+    # Style Section
+    # ==========================
     st.markdown(
         """
         <style>
@@ -617,37 +638,31 @@ elif selected == "Prediction":
             font-size: 16px;
             cursor: pointer;
         }
-
         .stButton>button:hover {
             background-color: grey;
         }
-
-        .center-button {
-            display: flex;
-            justify-content: center;
-        }
         </style>
-        """, unsafe_allow_html=True
+        """,
+        unsafe_allow_html=True
     )
 
-    # Enhanced Title
     st.markdown('<h1 class="title-style">Prediction Section</h1>', unsafe_allow_html=True)
 
-
-    # === Input Variables for SVR Prediction ===
+    # ==========================
+    # Input Variables
+    # ==========================
     st.subheader("Input Variables for SVR Prediction")
 
-    total_population = st.number_input('Total Population', min_value=0, value=0, key='total_population')
-    population_0_4 = st.number_input('Total Population Aged 0-4 Years', min_value=0, value=0, key='population_0_4')
-    forest_water_area = st.number_input('Forest and Water Areas (1000 Hectare)', min_value=0.0, value=0.0, key='forest_water_area')
-    avg_temperature = st.number_input('Average Temperature', min_value=0.0, value=0.0, key='avg_temperature')
-    avg_rainfall = st.number_input('Average Rainfall (mm)', min_value=0.0, value=0.0, key='avg_rainfall')
-    rainy_days = st.number_input('Total Days of Rain', min_value=0, value=0, key='rainy_days')
-    avg_humidity = st.number_input('Average Humidity', min_value=0.0, value=0.0, key='avg_humidity')
-    avg_solar_radiation = st.number_input('Average Solar Radiation', min_value=0.0, value=0.0, key='avg_solar_radiation')
-    avg_elevation = st.number_input('Average Elevation', min_value=0.0, value=0.0, key='avg_elevation')
+    total_population = st.number_input('Total Population', min_value=0, value=0)
+    population_0_4 = st.number_input('Total Population Aged 0-4 Years', min_value=0, value=0)
+    forest_water_area = st.number_input('Forest and Water Areas (1000 Hectare)', min_value=0.0, value=0.0)
+    avg_temperature = st.number_input('Average Temperature', min_value=0.0, value=0.0)
+    avg_rainfall = st.number_input('Average Rainfall (mm)', min_value=0.0, value=0.0)
+    rainy_days = st.number_input('Total Days of Rain', min_value=0, value=0)
+    avg_humidity = st.number_input('Average Humidity', min_value=0.0, value=0.0)
+    avg_solar_radiation = st.number_input('Average Solar Radiation', min_value=0.0, value=0.0)
+    avg_elevation = st.number_input('Average Elevation', min_value=0.0, value=0.0)
 
-    # === Create New DataFrame for Prediction ===
     new_data = pd.DataFrame({
         "Total Population": [total_population],
         "Total Population Aged 0-4 Years": [population_0_4],
@@ -660,32 +675,65 @@ elif selected == "Prediction":
         "Average Elevation": [avg_elevation]
     })
 
-    # === Preprocessing Using the Trained Scaler ===
     new_data_scaled = scaler_X.transform(new_data)
 
-    # === SVR Prediction ===
-    if st.button('Predict', key='prediction_button'):
+    # ==========================
+    # Predict Button (INSTANT)
+    # ==========================
+    if st.button('Predict'):
+
+        # Prediksi utama
         pred_scaled = svr_model.predict(new_data_scaled)
         pred = scaler_y.inverse_transform(pred_scaled.reshape(-1, 1)).ravel()[0]
 
+        # ==========================
+        # Instant CI calculation (95%)
+        # ==========================
+        CI_lower = pred - 1.96 * error_std
+        CI_upper = pred + 1.96 * error_std
+
+        # ==========================
+        # Output Prediksi
+        # ==========================
         st.markdown(
             f"""
             <div style="
-                background-color:#f9f9f9;
+                background-color:#fafafa;
                 border-radius:12px;
-                padding:20px;
-                box-shadow:0px 4px 10px rgba(0,0,0,0.15);
+                padding:25px;
+                margin-top:20px;
+                box-shadow:0px 4px 15px rgba(0,0,0,0.1);
                 text-align:center;
-                font-family:Segoe UI, sans-serif;
             ">
-                <h2 style="color:#2c3e50; margin-bottom:10px;">
-                    🔮 Predicted Number of Malaria Cases
-                </h2>
-                <p style="font-size:42px; font-weight:bold; color:#e74c3c; margin:0;">
+                <h2 style="color:#2c3e50;">🔮 Predicted Malaria Cases</h2>
+                <p style="font-size:48px; font-weight:bold; color:#e74c3c; margin:0;">
                     {pred:,.0f}
                 </p>
             </div>
             """,
             unsafe_allow_html=True
         )
+
+        # ==========================
+        # CI output
+        # ==========================
+        st.markdown(
+            f"""
+            <div style="
+                background-color:#eef7ee;
+                border-radius:12px;
+                padding:25px;
+                margin-top:25px;
+                box-shadow:0px 4px 15px rgba(0,0,0,0.10);
+                text-align:center;
+            ">
+                <h3 style="color:#2c3e50;">📏 95% Confidence Interval</h3>
+                <p style="font-size:32px; font-weight:bold; color:#27ae60; margin:0;">
+                    {CI_lower:,.0f} &mdash; {CI_upper:,.0f}
+                </p>
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
+
 
