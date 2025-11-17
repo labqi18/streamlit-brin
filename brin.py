@@ -16,7 +16,7 @@ from folium.plugins import HeatMap
 import numpy as np
 
 
-data = pd.read_excel("Rekap Data BRIN NEW.xlsx")
+data = pd.read_excel(r"C:\Users\Dell\Downloads\latihan python\brin malaria\Rekap Data BRIN NEW.xlsx")
 # Pilih variabel independen (X) dan dependen (y)
 X = data[[
     'Total Population',
@@ -594,7 +594,6 @@ elif selected == "Visualization":
 
 
 
-# Kondisi jika pengguna memilih Prediksi
 elif selected == "Prediction":
 
     import numpy as np
@@ -735,5 +734,4 @@ elif selected == "Prediction":
             """,
             unsafe_allow_html=True
         )
-
 
